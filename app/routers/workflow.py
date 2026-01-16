@@ -1,12 +1,17 @@
-from fastapi import APIRouter, Depends, Form, Request, WebSocket, WebSocketDisconnect
+import shutil
+import os
+import json
+import uuid
+from typing import List, Dict
+from fastapi import APIRouter, Depends, Form, Request, WebSocket, WebSocketDisconnect, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlmodel import Session, select, or_
-from typing import List, Dict
 
 from app.database import get_db
 from app.models import User, Consultation, ConsultationStatus, DoctorStatus, UserRole, PrivacyLog
 from app.security import get_current_user, encrypt_phi, decrypt_phi, audit_log
 from app.templates import render_template
+from app.transcription import transcribe_audio_chunk
 
 router = APIRouter()
 
@@ -123,8 +128,33 @@ async def consultation_room(request: Request, consult_id: int, session: Session 
     if consult.status != ConsultationStatus.ACTIVE: return RedirectResponse("/dashboard")
     
     symptoms = decrypt_phi(consult.symptoms_enc)
+    
+    # Fetch History (Previous Consultations)
+    history = []
+    if user.role == UserRole.DOCTOR:
+        prev_consults = session.exec(select(Consultation).where(
+            Consultation.patient_id == consult.patient_id,
+            Consultation.id != consult.id,
+            Consultation.status == ConsultationStatus.COMPLETED
+        ).order_by(Consultation.created_at.desc())).all()
+        
+        for pc in prev_consults:
+            doc = session.get(User, pc.doctor_id)
+            history.append({
+                "date": pc.created_at.strftime("%Y-%m-%d"),
+                "doctor": doc.full_name if doc else "Unknown",
+                "specialty": pc.specialty,
+                "notes": decrypt_phi(pc.notes_enc) if pc.notes_enc else "No notes."
+            })
+
     audit_log(session, user, "Entered Secure Room", "Video Stream", "Consultation", consult.id)
-    return render_template("consultation", {"request": request, "user": user, "consultation": consult, "symptoms_decrypted": symptoms})
+    return render_template("consultation", {
+        "request": request, 
+        "user": user, 
+        "consultation": consult, 
+        "symptoms_decrypted": symptoms,
+        "history": history
+    })
 
 @router.post("/consultation/notes")
 async def save_notes(request: Request, consultation_id: int = Form(...), notes: str = Form(...), session: Session = Depends(get_db)):
@@ -160,17 +190,30 @@ async def toggle_status(request: Request, session: Session = Depends(get_db)):
         session.commit()
     return RedirectResponse("/dashboard")
 
-# --- WebSocket ---
+# --- WebSocket & Transcription ---
 class ConnectionManager:
     def __init__(self): self.active_connections: Dict[int, List[WebSocket]] = {}
     async def connect(self, websocket: WebSocket, room_id: int):
         await websocket.accept()
         if room_id not in self.active_connections: self.active_connections[room_id] = []
         self.active_connections[room_id].append(websocket)
-    def disconnect(self, websocket: WebSocket, room_id: int): self.active_connections[room_id].remove(websocket)
-    async def broadcast(self, message: str, room_id: int):
+    
+    def disconnect(self, websocket: WebSocket, room_id: int):
         if room_id in self.active_connections:
-            for connection in self.active_connections[room_id]: await connection.send_text(message)
+            self.active_connections[room_id].remove(websocket)
+
+    async def broadcast(self, message: str, room_id: int):
+        """Sends a message to all users in the room"""
+        if room_id in self.active_connections:
+            for connection in self.active_connections[room_id]: 
+                await connection.send_text(message)
+
+    async def broadcast_except(self, message: str, room_id: int, sender_socket: WebSocket):
+        """Sends a message to everyone EXCEPT the sender (for WebRTC signaling)"""
+        if room_id in self.active_connections:
+            for connection in self.active_connections[room_id]:
+                if connection != sender_socket:
+                    await connection.send_text(message)
 
 manager = ConnectionManager()
 
@@ -180,6 +223,46 @@ async def websocket_endpoint(websocket: WebSocket, consult_id: int, user_id: int
     try:
         while True:
             data = await websocket.receive_text()
-            await manager.broadcast(f"User {user_id}: {data}", consult_id)
+            # Try to parse as JSON for WebRTC signaling
+            try:
+                msg_json = json.loads(data)
+                if "type" in msg_json and msg_json["type"] in ["offer", "answer", "candidate"]:
+                    # This is a WebRTC signaling message, broadcast to OTHER peer
+                    await manager.broadcast_except(data, consult_id, websocket)
+                else:
+                    # Normal chat message (JSON formatted)
+                    await manager.broadcast(data, consult_id)
+            except json.JSONDecodeError:
+                # Plain text fallback
+                await manager.broadcast(f"User {user_id}: {data}", consult_id)
     except WebSocketDisconnect:
         manager.disconnect(websocket, consult_id)
+
+@router.post("/consultation/transcribe")
+async def transcribe_endpoint(
+    consultation_id: int = Form(...),
+    user_id: int = Form(...),
+    audio_blob: UploadFile = File(...),
+    session: Session = Depends(get_db)
+):
+    """Receives audio chunks, transcribes them, and broadcasts via WebSocket"""
+    
+    # Save temp file
+    temp_filename = f"temp_{consultation_id}_{user_id}_{uuid.uuid4()}.webm"
+    with open(temp_filename, "wb") as buffer:
+        shutil.copyfileobj(audio_blob.file, buffer)
+    
+    # Run Faster Whisper
+    text = transcribe_audio_chunk(temp_filename)
+    
+    if text:
+        # Prepare JSON message
+        msg = json.dumps({
+            "type": "transcript",
+            "user_id": user_id,
+            "text": text
+        })
+        # Broadcast via WebSocket
+        await manager.broadcast(msg, consultation_id)
+        
+    return {"status": "ok", "text": text}
