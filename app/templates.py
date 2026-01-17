@@ -49,6 +49,11 @@ HTML_TEMPLATES = {
                 text-shadow: 0 1px 2px rgba(0,0,0,0.8);
             }
             .transcript-badge { font-size: 0.75em; background: #e3f2fd; color: #0d47a1; padding: 2px 6px; border-radius: 4px; margin-right: 5px; }
+            
+            /* Custom Scrollbar for Chat/Transcript */
+            .scroll-panel::-webkit-scrollbar { width: 6px; }
+            .scroll-panel::-webkit-scrollbar-track { background: #f1f1f1; }
+            .scroll-panel::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
         </style>
     </head>
     <body>
@@ -263,14 +268,52 @@ HTML_TEMPLATES = {
                 </div>
             </div>
 
-            <!-- Chat & Transcript -->
-            <div class="card mb-3" style="height: 300px;">
-                <div class="card-header">Live Chat & Transcription</div>
-                <div class="card-body bg-light" id="chat-box" style="overflow-y: auto;">
-                    <div class="text-muted small text-center">System: Secure channel established.</div>
+            <!-- TABBED Chat & Transcript Interface -->
+            <div class="card mb-3" style="height: 400px;">
+                <div class="card-header p-0 pt-2 px-2 bg-light">
+                    <ul class="nav nav-tabs card-header-tabs" id="consultTabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="chat-tab" data-bs-toggle="tab" data-bs-target="#chat-panel" type="button" role="tab" aria-controls="chat-panel" aria-selected="true">
+                                <i class="fas fa-comments"></i> Chat
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="transcript-tab" data-bs-toggle="tab" data-bs-target="#transcript-panel" type="button" role="tab" aria-controls="transcript-panel" aria-selected="false">
+                                <i class="fas fa-file-alt"></i> Transcript
+                                <span class="badge bg-danger rounded-pill small d-none" id="live-indicator" style="font-size: 0.6em;">LIVE</span>
+                            </button>
+                        </li>
+                    </ul>
                 </div>
-                <div class="card-footer">
-                    <input type="text" id="msg-input" class="form-control form-control-sm" placeholder="Type message...">
+                
+                <div class="card-body tab-content p-0 d-flex flex-column" style="height: 100%; overflow: hidden;">
+                    <!-- Chat Panel -->
+                    <div class="tab-pane fade show active flex-grow-1 d-flex flex-column h-100" id="chat-panel" role="tabpanel" aria-labelledby="chat-tab">
+                        <div class="flex-grow-1 p-3 bg-white scroll-panel" id="chat-box" style="overflow-y: auto;">
+                            <div class="text-muted small text-center">System: Secure channel established.</div>
+                        </div>
+                        <div class="p-2 border-top bg-light">
+                            <input type="text" id="msg-input" class="form-control form-control-sm" placeholder="Type message...">
+                        </div>
+                    </div>
+                    
+                    <!-- Transcript Panel -->
+                    <div class="tab-pane fade flex-grow-1 h-100" id="transcript-panel" role="tabpanel" aria-labelledby="transcript-tab">
+                        <div class="d-flex flex-column h-100">
+                            <div class="p-2 bg-light border-bottom d-flex justify-content-between align-items-center">
+                                <span class="small fw-bold text-muted">Live Transcription</span>
+                                <div class="form-check form-switch m-0">
+                                    <input class="form-check-input" type="checkbox" id="toggleOverlay" checked>
+                                    <label class="form-check-label small" for="toggleOverlay">Video Overlay</label>
+                                </div>
+                            </div>
+                            <div class="flex-grow-1 p-3 scroll-panel" id="transcript-box" style="overflow-y: auto; background-color: #fcfcfc;">
+                                <div id="transcript-placeholder" class="small text-muted text-center mt-4">
+                                    <em>Start transcription to see text here...</em>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -303,8 +346,15 @@ HTML_TEMPLATES = {
         
         const localVideo = document.getElementById('localVideo');
         const remoteVideo = document.getElementById('remoteVideo');
+        
+        // Chat & Transcript Elements
         const chatBox = document.getElementById('chat-box');
+        const transcriptBox = document.getElementById('transcript-box');
+        const transcriptPlaceholder = document.getElementById('transcript-placeholder');
         const transcriptOverlay = document.getElementById('transcriptOverlay');
+        const liveIndicator = document.getElementById('live-indicator');
+        const toggleOverlayBtn = document.getElementById('toggleOverlay');
+        
         let transcriptTimeout;
 
         // WebRTC Config
@@ -318,36 +368,55 @@ HTML_TEMPLATES = {
                 const msg = JSON.parse(event.data);
                 
                 if (msg.type === "transcript") {
-                    // Show in Video Overlay
-                    transcriptOverlay.textContent = msg.text;
-                    transcriptOverlay.style.display = 'block';
-                    
-                    // Show in Chat but styled differently
-                    addMessage("Transcript", msg.text, "transcript-badge");
-                    
-                    // Clear overlay after 4 seconds
-                    clearTimeout(transcriptTimeout);
-                    transcriptTimeout = setTimeout(() => {
-                        transcriptOverlay.style.display = 'none';
-                    }, 4000);
+                    handleTranscript(msg);
                 } 
                 else if (msg.type === "offer") { await handleOffer(msg); } 
                 else if (msg.type === "answer") { await handleAnswer(msg); } 
                 else if (msg.type === "candidate") { await handleCandidate(msg); }
-                else { addMessage("User", JSON.stringify(msg)); }
+                else { 
+                    // Assume chat message
+                    addChatMessage("User", JSON.stringify(msg)); 
+                }
             } catch (e) {
-                addMessage("", event.data);
+                // Plain text fallback (chat)
+                addChatMessage("", event.data);
             }
         };
 
-        function addMessage(sender, text, badgeClass) {
+        function handleTranscript(msg) {
+            // 1. Show in Video Overlay (if enabled)
+            if (toggleOverlayBtn.checked) {
+                transcriptOverlay.textContent = msg.text;
+                transcriptOverlay.style.display = 'block';
+                
+                clearTimeout(transcriptTimeout);
+                transcriptTimeout = setTimeout(() => {
+                    transcriptOverlay.style.display = 'none';
+                }, 4000);
+            }
+
+            // 2. Show in Dedicated Transcript Panel
+            if (transcriptPlaceholder) transcriptPlaceholder.style.display = 'none';
+            
+            const div = document.createElement('div');
+            div.className = 'mb-2 p-2 bg-white border rounded shadow-sm';
+            div.innerHTML = `<small class="d-block text-primary fw-bold mb-1">Speaker</small>${msg.text}`;
+            transcriptBox.appendChild(div);
+            transcriptBox.scrollTop = transcriptBox.scrollHeight;
+            
+            // 3. Show 'Live' badge on tab if not active
+            liveIndicator.classList.remove('d-none');
+            setTimeout(() => liveIndicator.classList.add('d-none'), 2000);
+        }
+
+        function addChatMessage(sender, text) {
             const div = document.createElement('div');
             div.className = 'mb-2 p-2 bg-white border rounded';
-            if (badgeClass) {
-                div.innerHTML = `<span class="${badgeClass}">${sender}</span> ${text}`;
-            } else {
-                div.textContent = text;
+            // Simple check to distinguish 'Me' from others
+            if (sender === "Me") {
+                 div.style.borderLeft = "4px solid #0d6efd";
             }
+            div.innerHTML = `<strong>${sender}</strong>: ${text}`;
             chatBox.appendChild(div);
             chatBox.scrollTop = chatBox.scrollHeight;
         }
@@ -356,7 +425,7 @@ HTML_TEMPLATES = {
         document.getElementById('msg-input').onkeypress = function(e) {
             if(e.key === 'Enter'){
                 ws.send(this.value);
-                addMessage("Me", this.value);
+                addChatMessage("Me", this.value);
                 this.value = '';
             }
         };

@@ -1,70 +1,103 @@
 import os
-import shutil
+import threading
 from faster_whisper import WhisperModel
 
-# Global model instance
+# -------------------------------
+# Thread-safe global model cache
+# -------------------------------
 _model = None
+_model_lock = threading.Lock()
 
 def get_model():
-    """Lazy load the Whisper model with optimized settings"""
+    """
+    Lazy-load and cache the Faster Whisper model (thread-safe).
+    Optimized for CPU-only, low-RAM environments.
+    """
     global _model
+
     if _model is None:
-        print("Loading Faster Whisper Model (Tiny - CPU)...")
-        try:
-            # 'int8' is faster on CPU. 
-            # If you have errors, try 'float32' (slower but more compatible)
-            _model = WhisperModel("tiny", device="cpu", compute_type="int8")
-        except Exception as e:
-            print(f"Error loading model: {e}")
-            return None
+        with _model_lock:
+            if _model is None:  # Double-check locking
+                print("Loading Faster Whisper Model (tiny.en | CPU | int8)...")
+                try:
+                    _model = WhisperModel(
+                        "base",
+                        device="cpu",
+                        compute_type="int8",
+                        cpu_threads=max(1, os.cpu_count() // 2),
+                        num_workers=1
+                    )
+                    print("Model loaded successfully.")
+                except Exception as e:
+                    print(f"[WhisperModel Error] {e}")
+                    return None
     return _model
+
 
 def transcribe_audio_chunk(file_path: str) -> str:
     """
-    Transcribes audio with strict filtering for silence and hallucinations.
+    Transcribe an audio chunk with aggressive silence removal
+    and hallucination filtering.
     """
     model = get_model()
-    if not model:
+    if model is None:
         return ""
-    
+
+    if not os.path.exists(file_path):
+        return ""
+
     try:
-        # 1. language="en": Force English
-        # 2. vad_filter=True: Ignore silence (Crucial for reducing hallucinations)
-        # 3. condition_on_previous_text=False: Treat chunk as standalone (prevents loop hallucinations)
         segments, info = model.transcribe(
-            file_path, 
-            beam_size=5, 
-            language="en", 
-            vad_filter=True,
-            vad_parameters=dict(min_silence_duration_ms=500),
-            condition_on_previous_text=False
+            file_path,
+            language="en",
+            beam_size=1,                         # Fast greedy decoding
+            vad_filter=True,                     # Skip silence
+            vad_parameters={
+                "min_silence_duration_ms": 500
+            },
+            condition_on_previous_text=False,
+            temperature=0.0                     # Reduces hallucinations
         )
-        
-        valid_texts = []
+
+        results = []
+
         for segment in segments:
-            # 4. Filter out low confidence segments or common hallucinations
-            if segment.avg_logprob < -1.0: # Threshold for "unsure" transcription
-                continue
-                
             text = segment.text.strip()
-            
-            # 5. Block common Whisper hallucinations on empty audio
-            hallucinations = ["you", "thank you", "thanks", "subtitle by", "watching", "."]
-            if text.lower() in hallucinations:
+
+            # Confidence filter
+            if segment.avg_logprob < -1.0:
                 continue
-                
-            if len(text) > 0:
-                valid_texts.append(text)
-                
-        return " ".join(valid_texts)
+
+            # Length filter
+            if len(text) < 2:
+                continue
+
+            # Hallucination blacklist
+            blacklist = {
+                "you",
+                "thank you",
+                "thanks",
+                "watching",
+                "subscribe",
+                "subtitle by",
+                ".",
+                ""
+            }
+
+            if text.lower() in blacklist:
+                continue
+
+            results.append(text)
+
+        return " ".join(results)
 
     except Exception as e:
-        print(f"Transcription error: {e}")
+        print(f"[Transcription Error] {e}")
         return ""
+
     finally:
-        # Cleanup temp file
-        if os.path.exists(file_path):
-            try:
-                os.remove(file_path)
-            except:
-                pass
+        # Always clean up temp files
+        try:
+            os.remove(file_path)
+        except Exception:
+            pass
