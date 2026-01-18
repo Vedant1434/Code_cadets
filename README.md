@@ -261,3 +261,4 @@ For support and questions:
 
 **ClinicVault Enterprise** - Secure, compliant telemedicine for modern healthcare.</content>
 - [🔗 ClinicVault Demo](https://drive.google.com/file/d/1vQ-Tkl7xecY7zjuhBTGiKewJAskDLkk4/view?usp=sharing)
+- As we initialise our data the credentials to access admin dashboard are email - admim@hospital.com and password:- admin123
