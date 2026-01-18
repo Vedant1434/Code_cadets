@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% block content %}
+
+<!-- ================= SUPERVISOR HEADER ================= -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card border-primary">
+            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    <i class="fas fa-user-shield me-2"></i>
+                    Supervisor Dashboard
+                </h5>
+                <span class="badge bg-light text-primary">
+                    ADMIN ACCESS
+                </span>
+            </div>
+
+            <div class="card-body">
+                <div class="row g-4">
+
+                    <!-- ================= ADD DOCTOR ================= -->
+                    <div class="col-md-4">
+                        <h6 class="fw-bold mb-2">
+                            <i class="fas fa-user-plus me-1"></i>
+                            Add New Doctor
+                        </h6>
+
+                        <form action="/admin/add_doctor"
+                              method="post"
+                              class="border p-3 rounded bg-light">
+
+                            <div class="mb-2">
+                                <input type="text"
+                                       name="full_name"
+                                       class="form-control form-control-sm"
+                                       placeholder="Dr. Full Name"
+                                       required>
+                            </div>
+
+                            <div class="mb-2">
+                                <input type="email"
+                                       name="email"
+                                       class="form-control form-control-sm"
+                                       placeholder="Email Address"
+                                       required>
+                            </div>
+
+                            <div class="mb-2">
+                                <input type="password"
+                                       name="password"
+                                       class="form-control form-control-sm"
+                                       placeholder="Temporary Password"
+                                       required>
+                            </div>
+
+                            <div class="mb-3">
+                                <select name="specialty"
+                                        class="form-select form-select-sm">
+                                    <option value="Cardiology">Cardiology</option>
+                                    <option value="Dermatology">Dermatology</option>
+                                    <option value="General">General Practice</option>
+                                </select>
+                            </div>
+
+                            <button class="btn btn-primary btn-sm w-100">
+                                <i class="fas fa-stethoscope me-1"></i>
+                                Onboard Doctor
+                            </button>
+                        </form>
+                    </div>
+
+                    <!-- ================= DOCTOR STATUS ================= -->
+                    <div class="col-md-8">
+                        <h6 class="fw-bold mb-2">
+                            <i class="fas fa-heartbeat me-1"></i>
+                            Medical Staff Status
+                        </h6>
+
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover align-middle">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Specialty</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for doc in doctors %}
+                                    <tr>
+                                        <td>{{ doc.full_name }}</td>
+                                        <td>{{ doc.specialty }}</td>
+                                        <td>
+                                            <span class="badge
+                                                {% if doc.status == 'online' %}
+                                                    bg-success
+                                                {% elif doc.status == 'busy' %}
+                                                    bg-danger
+                                                {% else %}
+                                                    bg-secondary
+                                                {% endif %}
+                                            ">
+                                                {{ doc.status | upper }}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ================= PRIVACY LOG ================= -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-history me-1"></i>
+                    System-Wide Privacy Log
+                </h5>
+            </div>
+
+            <div class="card-body p-0"
+                 style="max-height: 400px; overflow-y:auto;">
+
+                <div class="table-responsive">
+                    <table class="table table-striped table-sm mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Time</th>
+                                <th>Actor</th>
+                                <th>Action</th>
+                                <th>Target</th>
+                                <th>Purpose</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for log in logs %}
+                            <tr>
+                                <td>{{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                                <td>{{ log.actor_name }}</td>
+                                <td>{{ log.action }}</td>
+                                <td>{{ log.target_data }}</td>
+                                <td>{{ log.purpose }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

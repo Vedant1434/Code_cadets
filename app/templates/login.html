@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="row justify-content-center mt-5">
+    <div class="col-md-5 col-lg-4">
+        <div class="card p-4">
+
+            <!-- Header -->
+            <div class="text-center mb-4">
+                <i class="fas fa-user-shield fa-2x text-primary mb-2"></i>
+                <h3 class="mb-1">Hospital Portal</h3>
+                <small class="text-muted">Secure access for authorized users</small>
+            </div>
+
+            <!-- Login Form -->
+            <form action="/auth/login" method="post">
+                <div class="mb-3">
+                    <label class="form-label">Email Address</label>
+                    <div class="input-group">
+                        <span class="input-group-text"><i class="fas fa-envelope"></i></span>
+                        <input
+                            type="email"
+                            name="username"
+                            class="form-control"
+                            placeholder="Email Address"
+                            required
+                        >
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Password</label>
+                    <div class="input-group">
+                        <span class="input-group-text"><i class="fas fa-lock"></i></span>
+                        <input
+                            type="password"
+                            name="password"
+                            class="form-control"
+                            placeholder="Password"
+                            required
+                        >
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-primary w-100 mb-2">
+                    <i class="fas fa-shield-alt me-1"></i> Secure Login
+                </button>
+            </form>
+
+            <!-- Links -->
+            <div class="text-center mt-3">
+                <a href="/register" class="text-decoration-none">
+                    New patient? Register here
+                </a>
+            </div>
+
+            <hr>
+
+            <!-- Demo Seed -->
+            <form action="/auth/seed" method="post">
+                <button class="btn btn-outline-secondary btn-sm w-100">
+                    <i class="fas fa-database me-1"></i> Initialize Demo Data
+                </button>
+            </form>
+
+        </div>
+    </div>
+</div>
+
+{% endblock %}

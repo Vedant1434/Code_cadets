@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <div class="card mb-4">
+            <div class="card-header bg-white d-flex justify-content-between"><h5 class="mb-0">Patient Triage</h5><span class="secure-badge"><i class="fas fa-shield-alt"></i> HIPAA Compliant</span></div>
+            <div class="card-body">
+                {% if active_consultation %}
+                    <div class="alert alert-info">
+                        <h5><i class="fas fa-user-md"></i> Consultation #{{ active_consultation.id }}</h5>
+                        <p><strong>Status:</strong> {{ active_consultation.status | upper }}</p>
+                        <p><strong>Specialty:</strong> {{ active_consultation.specialty }}</p>
+                        {% if active_consultation.status == 'pending_payment' %}<a href="/billing/{{ active_consultation.id }}" class="btn btn-warning w-100">Proceed to Billing Counter</a>{% elif active_consultation.status == 'active' %}<a href="/consultation/{{ active_consultation.id }}" class="btn btn-success w-100">Enter Consultation Room</a>{% endif %}
+                    </div>
+                {% else %}
+                    <h6>Start New Triage</h6>
+                    <form action="/triage/start" method="post">
+                        <div class="mb-3"><label>Select Required Specialty</label><select name="specialty" class="form-select"><option value="General">General Practice</option><option value="Cardiology">Cardiology</option><option value="Dermatology">Dermatology</option></select></div>
+                        <div class="mb-3"><label>Describe Symptoms</label><textarea name="symptoms" class="form-control" rows="3" required></textarea><small class="text-muted"><i class="fas fa-lock"></i> Encrypted at rest.</small></div>
+                        <button class="btn btn-primary">Find Available Doctor</button>
+                    </form>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header bg-white"><h5 class="mb-0"><i class="fas fa-history"></i> My Privacy Timeline</h5></div>
+            <div class="card-body" style="max-height: 500px; overflow-y: auto;">
+                {% for log in logs %}<div class="timeline-item"><div class="timeline-date">{{ log.timestamp.strftime('%H:%M:%S') }}</div><strong>{{ log.actor_name }}</strong><div>{{ log.action }}</div><div class="small text-muted">Target: {{ log.target_data }}</div><div class="small text-info fst-italic">Purpose: {{ log.purpose }}</div></div>{% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

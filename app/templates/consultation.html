@@ -1,0 +1,339 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <!-- WebRTC Video Container -->
+        <div class="card mb-3 bg-dark text-white video-container">
+            <video id="remoteVideo" autoplay playsinline></video>
+            <video id="localVideo" autoplay playsinline muted></video>
+            <div id="transcriptOverlay"></div> <!-- Transcript Overlay -->
+
+            <div class="position-absolute bottom-0 start-0 p-3" style="width: 100%; z-index: 30;">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <span class="badge bg-danger animate-pulse"><i class="fas fa-circle"></i> Encrypted Live Feed</span>
+                        <button id="startCallBtn" class="btn btn-success btn-sm ms-2">Start Video Call</button>
+                    </div>
+                    <button id="recordBtn" class="btn btn-outline-light btn-sm"><i class="fas fa-microphone"></i> Start Transcription</button>
+                </div>
+            </div>
+        </div>
+
+        {% if user.role == 'doctor' %}
+        <div class="card">
+            <div class="card-header d-flex justify-content-between">
+                <span>Medical Notes (Encrypted Storage)</span>
+            </div>
+            <div class="card-body">
+                <form action="/consultation/notes" method="post">
+                    <input type="hidden" name="consultation_id" value="{{ consultation.id }}">
+                    <textarea name="notes" class="form-control mb-2" rows="4" placeholder="Type clinical notes here..."></textarea>
+                    <button class="btn btn-primary btn-sm">Save & Encrypt</button>
+                </form>
+                <hr>
+                <a href="/consultation/end/{{ consultation.id }}" class="btn btn-outline-danger w-100">End Session</a>
+            </div>
+        </div>
+        {% else %}
+        <!-- Patient View: Just Leave Button -->
+        <div class="card">
+             <div class="card-body">
+                <p class="text-muted">You are in a secure session with your doctor.</p>
+                <a href="/dashboard" class="btn btn-outline-secondary w-100">Leave Room</a>
+             </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="col-md-4">
+        <!-- Patient Data -->
+        <div class="card mb-3">
+            <div class="card-header bg-info text-white">Current Patient Data</div>
+            <div class="card-body">
+                <h6>Symptoms (Decrypted):</h6>
+                <p class="alert alert-secondary">{{ symptoms_decrypted }}</p>
+                <small class="text-muted d-block mb-2"><i class="fas fa-eye"></i> Decrypted for: {{ user.full_name }}</small>
+            </div>
+        </div>
+
+        <!-- TABBED Chat & Transcript Interface -->
+        <div class="card mb-3" style="height: 400px;">
+            <div class="card-header p-0 pt-2 px-2 bg-light">
+                <ul class="nav nav-tabs card-header-tabs" id="consultTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="chat-tab" data-bs-toggle="tab" data-bs-target="#chat-panel" type="button" role="tab" aria-controls="chat-panel" aria-selected="true">
+                            <i class="fas fa-comments"></i> Chat
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="transcript-tab" data-bs-toggle="tab" data-bs-target="#transcript-panel" type="button" role="tab" aria-controls="transcript-panel" aria-selected="false">
+                            <i class="fas fa-file-alt"></i> Transcript
+                            <span class="badge bg-danger rounded-pill small d-none" id="live-indicator" style="font-size: 0.6em;">LIVE</span>
+                        </button>
+                    </li>
+                </ul>
+            </div>
+
+            <div class="card-body tab-content p-0 d-flex flex-column" style="height: 100%; overflow: hidden;">
+                <!-- Chat Panel -->
+                <div class="tab-pane fade show active flex-grow-1 d-flex flex-column h-100" id="chat-panel" role="tabpanel" aria-labelledby="chat-tab">
+                    <div class="flex-grow-1 p-3 bg-white scroll-panel" id="chat-box" style="overflow-y: auto;">
+                        <div class="text-muted small text-center">System: Secure channel established.</div>
+                    </div>
+                    <div class="p-2 border-top bg-light">
+                        <input type="text" id="msg-input" class="form-control form-control-sm" placeholder="Type message...">
+                    </div>
+                </div>
+
+                <!-- Transcript Panel -->
+                <div class="tab-pane fade flex-grow-1 h-100" id="transcript-panel" role="tabpanel" aria-labelledby="transcript-tab">
+                    <div class="d-flex flex-column h-100">
+                        <div class="p-2 bg-light border-bottom d-flex justify-content-between align-items-center">
+                            <span class="small fw-bold text-muted">Live Transcription</span>
+                            <div class="form-check form-switch m-0">
+                                <input class="form-check-input" type="checkbox" id="toggleOverlay" checked>
+                                <label class="form-check-label small" for="toggleOverlay">Video Overlay</label>
+                            </div>
+                        </div>
+                        <div class="flex-grow-1 p-3 scroll-panel" id="transcript-box" style="overflow-y: auto; background-color: #fcfcfc;">
+                            <div id="transcript-placeholder" class="small text-muted text-center mt-4">
+                                <em>Start transcription to see text here...</em>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- History Sidebar (Doctor Only) -->
+        {% if history %}
+        <div class="card">
+            <div class="card-header bg-secondary text-white">Patient History</div>
+            <div class="card-body p-0" style="max-height: 200px; overflow-y: auto;">
+                <ul class="list-group list-group-flush">
+                    {% for h in history %}
+                    <li class="list-group-item">
+                        <small class="fw-bold">{{ h.date }} - {{ h.specialty }}</small><br>
+                        <small class="text-muted">Dr. {{ h.doctor }}</small>
+                        <div class="mt-1 small fst-italic border-start border-primary ps-2">{{ h.notes }}</div>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- WebRTC & Socket Logic -->
+<script>
+    const consultId = "{{ consultation.id }}";
+    const userId = "{{ user.id }}";
+    const wsUrl = "ws://" + window.location.host + "/ws/" + consultId + "/" + userId;
+    const ws = new WebSocket(wsUrl);
+
+    const localVideo = document.getElementById('localVideo');
+    const remoteVideo = document.getElementById('remoteVideo');
+
+    // Chat & Transcript Elements
+    const chatBox = document.getElementById('chat-box');
+    const transcriptBox = document.getElementById('transcript-box');
+    const transcriptPlaceholder = document.getElementById('transcript-placeholder');
+    const transcriptOverlay = document.getElementById('transcriptOverlay');
+    const liveIndicator = document.getElementById('live-indicator');
+    const toggleOverlayBtn = document.getElementById('toggleOverlay');
+
+    let transcriptTimeout;
+
+    // WebRTC Config
+    const rtcConfig = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
+    let peerConnection;
+    let localStream;
+
+    // --- WebSocket Handling ---
+    ws.onmessage = async function(event) {
+        try {
+            const msg = JSON.parse(event.data);
+
+            if (msg.type === "transcript") {
+                handleTranscript(msg);
+            }
+            else if (msg.type === "offer") { await handleOffer(msg); }
+            else if (msg.type === "answer") { await handleAnswer(msg); }
+            else if (msg.type === "candidate") { await handleCandidate(msg); }
+            else {
+                // Assume chat message
+                addChatMessage("User", JSON.stringify(msg));
+            }
+        } catch (e) {
+            // Plain text fallback (chat)
+            addChatMessage("", event.data);
+        }
+    };
+
+    function handleTranscript(msg) {
+        // 1. Show in Video Overlay (if enabled)
+        if (toggleOverlayBtn.checked) {
+            transcriptOverlay.textContent = msg.text;
+            transcriptOverlay.style.display = 'block';
+
+            clearTimeout(transcriptTimeout);
+            transcriptTimeout = setTimeout(() => {
+                transcriptOverlay.style.display = 'none';
+            }, 4000);
+        }
+
+        // 2. Show in Dedicated Transcript Panel
+        if (transcriptPlaceholder) transcriptPlaceholder.style.display = 'none';
+
+        const div = document.createElement('div');
+        div.className = 'mb-2 p-2 bg-white border rounded shadow-sm';
+        div.innerHTML = `<small class="d-block text-primary fw-bold mb-1">Speaker</small>${msg.text}`;
+        transcriptBox.appendChild(div);
+        transcriptBox.scrollTop = transcriptBox.scrollHeight;
+
+        // 3. Show 'Live' badge on tab if not active
+        liveIndicator.classList.remove('d-none');
+        setTimeout(() => liveIndicator.classList.add('d-none'), 2000);
+    }
+
+    function addChatMessage(sender, text) {
+        const div = document.createElement('div');
+        div.className = 'mb-2 p-2 bg-white border rounded';
+        // Simple check to distinguish 'Me' from others
+        if (sender === "Me") {
+             div.style.borderLeft = "4px solid #0d6efd";
+        }
+        div.innerHTML = `<strong>${sender}</strong>: ${text}`;
+        chatBox.appendChild(div);
+        chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    // --- Chat ---
+    document.getElementById('msg-input').onkeypress = function(e) {
+        if(e.key === 'Enter'){
+            ws.send(this.value);
+            addChatMessage("Me", this.value);
+            this.value = '';
+        }
+    };
+
+    // --- WebRTC Logic ---
+    async function startCall() {
+        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        localVideo.srcObject = localStream;
+
+        peerConnection = new RTCPeerConnection(rtcConfig);
+        peerConnection.onicecandidate = e => {
+            if(e.candidate) {
+                ws.send(JSON.stringify({ type: "candidate", candidate: e.candidate }));
+            }
+        };
+        peerConnection.ontrack = e => {
+            remoteVideo.srcObject = e.streams[0];
+        };
+        localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+        ws.send(JSON.stringify({ type: "offer", sdp: offer }));
+
+        document.getElementById('startCallBtn').style.display = 'none';
+    }
+
+    async function handleOffer(msg) {
+        if(!localStream) {
+            localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            localVideo.srcObject = localStream;
+        }
+
+        peerConnection = new RTCPeerConnection(rtcConfig);
+        peerConnection.onicecandidate = e => {
+            if(e.candidate) ws.send(JSON.stringify({ type: "candidate", candidate: e.candidate }));
+        };
+        peerConnection.ontrack = e => {
+            remoteVideo.srcObject = e.streams[0];
+        };
+        localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+        const answer = await peerConnection.createAnswer();
+        await peerConnection.setLocalDescription(answer);
+        ws.send(JSON.stringify({ type: "answer", sdp: answer }));
+    }
+
+    async function handleAnswer(msg) {
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+    }
+
+    async function handleCandidate(msg) {
+        if(peerConnection) {
+            await peerConnection.addIceCandidate(new RTCIceCandidate(msg.candidate));
+        }
+    }
+
+    document.getElementById('startCallBtn').onclick = startCall;
+
+    // --- ROBUST Audio Transcription Logic ---
+    // Filter out tiny audio blobs to prevent backend processing errors
+
+    let isRecording = false;
+    let recorderStream = null;
+    const recordBtn = document.getElementById('recordBtn');
+
+    async function startAudioLoop() {
+        if (!isRecording) return;
+
+        if (!recorderStream) {
+             recorderStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        }
+
+        const mediaRecorder = new MediaRecorder(recorderStream);
+        const audioChunks = [];
+
+        mediaRecorder.ondataavailable = event => {
+            audioChunks.push(event.data);
+        };
+
+        mediaRecorder.onstop = async () => {
+            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+
+            // IGNORE tiny blobs (less than 1KB) which are usually just empty headers
+            if (audioBlob.size > 1024 && isRecording) {
+                const formData = new FormData();
+                formData.append("audio_blob", audioBlob);
+                formData.append("consultation_id", consultId);
+                formData.append("user_id", userId);
+
+                fetch("/consultation/transcribe", { method: "POST", body: formData });
+            }
+
+            if (isRecording) {
+                startAudioLoop();
+            }
+        };
+
+        mediaRecorder.start();
+
+        setTimeout(() => {
+            if (mediaRecorder.state === "recording") {
+                mediaRecorder.stop();
+            }
+        }, 3000);
+    }
+
+    recordBtn.onclick = async () => {
+        if (!isRecording) {
+            isRecording = true;
+            recordBtn.innerHTML = '<i class="fas fa-stop"></i> Stop Transcription';
+            recordBtn.classList.replace('btn-outline-light', 'btn-danger');
+            startAudioLoop();
+        } else {
+            isRecording = false;
+            recordBtn.innerHTML = '<i class="fas fa-microphone"></i> Start Transcription';
+            recordBtn.classList.replace('btn-danger', 'btn-outline-light');
+        }
+    };
+
+</script>
+{% endblock %}
