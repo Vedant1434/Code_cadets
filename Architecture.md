@@ -124,7 +124,6 @@ The transcription pipeline is fully asynchronous to avoid blocking live consulta
 
 * SQLModel ORM
 * SQLite (development)
-* PostgreSQL (production)
 
 **Stored Entities**
 
@@ -231,7 +230,6 @@ The transcription pipeline is fully asynchronous to avoid blocking live consulta
 
 ### Production
 
-* PostgreSQL database
 * Multiple Uvicorn workers
 * Reverse proxy with HTTPS
 * Load balancer support
@@ -241,7 +239,7 @@ The transcription pipeline is fully asynchronous to avoid blocking live consulta
         |
 [ FastAPI Instances ]
         |
-[ PostgreSQL (Encrypted) ]
+[ Database (Encrypted) ]
 ```
 
 ---
