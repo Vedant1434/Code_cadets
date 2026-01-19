@@ -236,11 +236,47 @@ async def consultation_room(request: Request, consult_id: int, session: Session 
             # If decryption failed (empty string), show user-friendly message
             # This can happen if encryption key changed or data is corrupted
             if not symptoms_dec:
-                symptoms_dec = "Unable to decrypt symptoms data. This may occur if the data was encrypted with a different key."
+                symptoms_dec = "Unable to decrypt symptoms data."
             if not notes_dec:
-                notes_dec = "Unable to decrypt clinical notes. This may occur if the data was encrypted with a different key."
+                notes_dec = "Unable to decrypt clinical notes."
             if not transcript_dec:
                 transcript_dec = None
+            
+            # Parse prescriptions and files from notes
+            prescriptions = []
+            files = []
+            clinical_notes = notes_dec
+            
+            if notes_dec and "Prescriptions:" in notes_dec:
+                parts = notes_dec.split("Prescriptions:")
+                clinical_notes = parts[0].strip()
+                prescription_text = parts[1] if len(parts) > 1 else ""
+                # Parse prescription lines
+                lines = prescription_text.split('\n')
+                for line in lines:
+                    line = line.strip()
+                    if line and (line[0].isdigit() or line.startswith('-')):
+                        # Remove numbering
+                        if line[0].isdigit() and '. ' in line:
+                            line = line.split('. ', 1)[1]
+                        elif line.startswith('- '):
+                            line = line[2:]
+                        prescriptions.append(line)
+            
+            # For files, assume they are listed in notes as "Files:" or similar
+            if notes_dec and "Files:" in notes_dec:
+                parts = clinical_notes.split("Files:")
+                clinical_notes = parts[0].strip()
+                file_text = parts[1] if len(parts) > 1 else ""
+                lines = file_text.split('\n')
+                for line in lines:
+                    line = line.strip()
+                    if line and (line[0].isdigit() or line.startswith('-')):
+                        if line[0].isdigit() and '. ' in line:
+                            line = line.split('. ', 1)[1]
+                        elif line.startswith('- '):
+                            line = line[2:]
+                        files.append(line)
             
             history.append({
                 "id": pc.id,
@@ -250,7 +286,9 @@ async def consultation_room(request: Request, consult_id: int, session: Session 
                 "patient": patient.full_name if patient else "Unknown Patient",
                 "specialty": pc.specialty,
                 "symptoms": symptoms_dec if symptoms_dec else "No symptoms recorded.",
-                "notes": notes_dec if notes_dec else "No clinical notes recorded.",
+                "notes": clinical_notes if clinical_notes else "No clinical notes recorded.",
+                "prescriptions": prescriptions,
+                "files": files,
                 "transcript": transcript_dec
             })
     

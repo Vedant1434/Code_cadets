@@ -187,9 +187,14 @@
             </div>
             <div class="card-body">
                 <input type="file" class="form-control form-control-sm mb-2" id="fileUpload" multiple accept="image/*,.pdf,.doc,.docx">
-                <button class="btn btn-sm btn-primary w-100" onclick="uploadFile()">
-                    <i class="fas fa-upload me-1"></i>Upload File
-                </button>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-sm btn-primary flex-fill" onclick="uploadFile()">
+                        <i class="fas fa-upload me-1"></i>Upload File
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="copyFilesToNotes()">
+                        <i class="fas fa-copy"></i>
+                    </button>
+                </div>
                 <div id="fileList" class="mt-2"></div>
             </div>
         </div>
@@ -372,6 +377,26 @@
                                     <strong class="text-muted small">Clinical Notes:</strong>
                                     <p class="small mb-2 border-start border-success ps-2 fst-italic">{{ h.notes }}</p>
                                 </div>
+                                {% if h.prescriptions %}
+                                <div class="mb-2">
+                                    <strong class="text-muted small">Prescriptions:</strong>
+                                    <ul class="small mb-2 border-start border-primary ps-2">
+                                        {% for p in h.prescriptions %}
+                                        <li>{{ p }}</li>
+                                        {% endfor %}
+                                    </ul>
+                                </div>
+                                {% endif %}
+                                {% if h.files %}
+                                <div class="mb-2">
+                                    <strong class="text-muted small">Files:</strong>
+                                    <ul class="small mb-2 border-start border-secondary ps-2">
+                                        {% for f in h.files %}
+                                        <li>{{ f }}</li>
+                                        {% endfor %}
+                                    </ul>
+                                </div>
+                                {% endif %}
                                 {% if h.transcript %}
                                 <div>
                                     <strong class="text-muted small">Transcript:</strong>
@@ -969,10 +994,35 @@
         }
     }
     
+    function copyFilesToNotes() {
+        if (uploadedFiles.length === 0) {
+            if (typeof showToast !== 'undefined') {
+                showToast('No files to copy', 'warning');
+            }
+            return;
+        }
+        
+        let filesText = 'Files:\n';
+        uploadedFiles.forEach((f, idx) => {
+            filesText += `${idx + 1}. ${f.name} (${(f.size / 1024).toFixed(1)} KB)\n`;
+        });
+        
+        const textarea = document.getElementById('notesTextarea');
+        if (textarea) {
+            const currentNotes = textarea.value;
+            textarea.value = currentNotes ? currentNotes + '\n\n' + filesText : filesText;
+            updateCharCount();
+            if (typeof showToast !== 'undefined') {
+                showToast('Files copied to notes', 'success');
+            }
+        }
+    }
+    
     // Make functions global
     window.removePrescription = removePrescription;
     window.addPrescription = addPrescription;
     window.copyPrescriptionToNotes = copyPrescriptionToNotes;
+    window.copyFilesToNotes = copyFilesToNotes;
     window.saveVitals = saveVitals;
 
     // --- File Upload ---
